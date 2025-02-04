@@ -4,6 +4,7 @@ import clip
 from PIL import Image
 import cv2
 import numpy as np
+from tqdm import tqdm
 import xml.etree.ElementTree as ET
 import os
 from ultralytics import YOLO
@@ -52,15 +53,24 @@ class FewShotLogoRecognizer:
             Dict[str, torch.Tensor]: A dictionary mapping brand names to their prototype embeddings.
         """
         prototypes = {}
-        for brand, paths in brand_examples.items():
+        for brand, paths in tqdm(brand_examples.items(), desc="Load brands"):
             embeddings = []
             for path in paths:
                 try:
-                    image = self.preprocess(Image.open(path)).unsqueeze(0).to(self.device)
-                    with torch.no_grad():
-                        emb = self.model.encode_image(image)
-                        emb /= emb.norm(dim=-1, keepdim=True)
-                        embeddings.append(emb)
+                    image = Image.open(path)
+                    xml_path = os.path.join('../data/processed/annotations/val',
+                                os.path.splitext(os.path.basename(path))[0] + ".xml")
+                    detections = self._parse_xml_annotations(xml_path)
+
+                    results = []
+                    for det in detections:
+                        x1, y1, x2, y2 = det['bbox']
+                        crop = image.crop((x1, y1, x2, y2))
+                        crop = self.preprocess(crop).unsqueeze(0).to(self.device)
+                        with torch.no_grad():
+                            emb = self.model.encode_image(crop)
+                            emb /= emb.norm(dim=-1, keepdim=True)
+                            embeddings.append(emb)
                 except Exception as e:
                     print(f"Error processing {path}: {e}")
             if embeddings:
@@ -82,7 +92,7 @@ class FewShotLogoRecognizer:
         img = cv2.resize(image, (608, 608))
         return torch.from_numpy(img).permute(2, 0, 1).float().div(255.0).unsqueeze(0)
 
-    def detect_logos(self, image_path: str, target_brand: Optional[str] = None, augmet: bool = False) -> List[dict]:
+    def detect_logos(self, image_path: str, target_brand: Optional[str] = None, augmet: bool = False, threshold: float = 0.3, coefficient:int = 10) -> List[dict]:
         """
         Detects logos in an image and classifies them.
 
@@ -128,7 +138,7 @@ class FewShotLogoRecognizer:
                 crop_pil = augment_image(crop_pil)
             # Binary classification
             if target_brand:
-                confidence = self.is_target_brand(crop_pil, target_brand)
+                confidence = self.is_target_brand(crop_pil, target_brand, threshold=threshold, coefficient=coefficient)
                 brand = target_brand if confidence > 0.5 else "other"
             else:
                 brand, confidence = self.classify_logo(crop_pil)
@@ -143,7 +153,10 @@ class FewShotLogoRecognizer:
 
         return results
 
-    def is_target_brand(self, image_crop: Image.Image, target_brand: str, threshold: float = 0.4) -> float:
+    def _sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
+
+    def is_target_brand(self, image_crop: Image.Image, target_brand: str, threshold: float = 0.3, coefficient:int = 10) -> float:
         """
         Returns the probability that the cropped image belongs to the target brand.
 
@@ -164,11 +177,14 @@ class FewShotLogoRecognizer:
             query_emb /= query_emb.norm(dim=-1, keepdim=True)
 
         # Compute similarity with the target brand
-        target_sim = torch.cosine_similarity(query_emb,self.brand_prototypes[target_brand].unsqueeze(0)).item()
+        # target_sim = torch.cosine_similarity(query_emb,self.brand_prototypes[target_brand].unsqueeze(0)).item()
 
         # target_sim = torch.norm(query_emb - self.brand_prototypes[target_brand].unsqueeze(0)).item()
+        
+        target_sim = torch.norm(query_emb - self.brand_prototypes[target_brand].unsqueeze(0)).item()
+
         # Normalize to probability using sigmoid
-        probability = 1 / (1 + np.exp(-10 * (target_sim - threshold)))
+        probability = self._sigmoid(-coefficient * (target_sim - threshold))
 
         return probability
 
