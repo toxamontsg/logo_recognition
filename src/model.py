@@ -105,7 +105,7 @@ class FewShotLogoRecognizer:
                 detections = pred.boxes.xyxy.cpu().numpy()
         else:
             # Fallback to XML annotations
-        xml_path = os.path.join('data/processed/annotations/val',
+            xml_path = os.path.join('data/processed/annotations/val',
                                 os.path.splitext(os.path.basename(image_path))[0] + ".xml")
         detections = self._parse_xml_annotations(xml_path)
 
