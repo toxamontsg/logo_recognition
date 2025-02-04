@@ -7,7 +7,7 @@
 Система для обнаружения и классификации логотипов с использованием Few-Shot Learning подхода.
 
 ## Особенности
-- Детекция логотипов с помощью YOLOv8
+- Детекция логотипов с помощью YOLOv5
 - Классификация через CLIP с прототипами классов
 - Поддержка форматов PL2K и LogoDet-3K
 - Оценка качества (mAP, точность классификации)
@@ -27,7 +27,12 @@ pip install -r requirements.txt
 
 3. Скачать веса YOLO:
 ```bash
-wget https://github.com/ultralytics/assets/releases/download/v8.1.0/yolov8n.pt -P models/
+!wget -P models https://github.com/toxamontsg/yolo_models/raw/refs/heads/main/yolo5s_logo.pt
+```
+
+4. Скачать dataset:
+```bash
+!wget -P data/raw 123.57.42.89/Dataset_ict/LogoDet-3K.zip
 ```
 
 ## Использование
@@ -47,15 +52,17 @@ processor.load_data(
 ### Подготовка данных
 
 ```python
+from src.data_processing import DataSplit
 from src.model import FewShotLogoRecognizer
 from src.dataset import FewShotLogoDataset
-from src.evaluator import LogoEvaluator
 
-# Инициализация модели
-recognizer = FewShotLogoRecognizer(
-    brand_examples={'brand1': ['path1.jpg', ...]},
-    detector_path='models/yolov8n.pt'
+# разделение данных на train, val, test 
+data_split = DataSplit(dataset_type='LogoDet-3K')
+data_split.load_data(
+    input_path='.data/raw/LogoDet-3K',
+    output_path='data/processed'
 )
+
 
 # Загрузка данных
 dataset = FewShotLogoDataset(
@@ -64,19 +71,69 @@ dataset = FewShotLogoDataset(
     support_samples=5
 )
 
-# Оценка модели
-evaluator = LogoEvaluator(recognizer, dataset)
-detection_metrics = evaluator.evaluate_detection()
-classification_acc = evaluator.evaluate_classification()
-```
+# Инициализация модели
+support_set = dataset.get_support_set()
+query_set = dataset.get_query_set()
 
-### Добавление новых брендов
 
-```python
-recognizer.add_new_brand(
-    brand_name='new_brand',
-    example_paths=['examples/new1.jpg', 'examples/new2.jpg']
+brand_examples = {}
+for img_path, brand in support_set:
+    if brand not in brand_examples:
+        brand_examples[brand] = []
+    brand_examples[brand].append(img_path)
+
+recognizer = FewShotLogoRecognizer(
+    brand_examples=brand_examples,
+    model_name="ViT-B/32",
+    detector_path="../models/yolo5s_logo.pt"
+    
 )
+
 ```
 
-## Результаты
+## Описание
+
+
+### Цель системы
+
+Реализация end-to-end решения для обнаружения и классификации логотипов брендов на изображениях с использованием few-shot обучения. Система должна:
+
+1. Детектировать логотипы на изображениях.
+2. Классифицировать их по брендам, даже при ограниченном количестве примеров.
+
+
+### Архитектура системы
+
+#### 1. Детекция логотипов
+
+**Модель**: YOLO (например, YOLOv5) для обнаружения bounding box'ов.
+
+**Особенности**:
+- Использует предобученную модель для локализации логотипов.
+- Настраиваемые параметры: `conf` (порог уверенности), `iou` (порог пересечения).
+- Обработка ошибок: проверка на пустые предсказания, фильтрация некорректных обрезков.
+
+#### 2. Классификация логотипов
+
+**Модель**: CLIP (Contrastive Language-Image Pretraining) от OpenAI.
+
+**Few-shot подход**:
+- **Прототипы брендов**: Усредненные эмбеддинги изображений.
+- **Классификация**: Сравнение эмбеддинга обнаруженного логотипа с прототипами через Евклидово расстояние.
+
+**Особенности**:
+- **Нормализация эмбеддингов**: Для стабильности вычислений.
+- **Коэффициент и порог**: Настройка чувствительности сигмоидной функции для преобразования расстояния в вероятность.
+- **Дообучение**: Возможность дообучения модели CLIP на специфическом наборе данных логотипов.
+- **В production**: Использование векторной базы данных для хранения эмбеддингов изображений прототипов.
+- **Few-shot обучение**: Для классификации требуется всего 5-6 примеров на бренд.
+- **Эмбеддинги CLIP**: Позволяют работать с малым количеством данных.
+- Для хорошего результата можно сделать дообучение модели CLIP.
+
+#### 3. Валидация системы
+
+**Метрики детекции**: mAP (mean Average Precision), IoU.
+
+**Метрики классификации**: Accuracy, Precision, Recall, F1, ROC-AUC.
+
+**Бинарная классификация**: Возможность проверки принадлежности к конкретному бренду с настраиваемым порогом.
