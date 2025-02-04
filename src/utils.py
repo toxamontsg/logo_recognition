@@ -1,28 +1,17 @@
-import cv2
+from PIL import Image, ImageFilter
+import random
 
-def augment_image(image, blur_kernel_size=5, angle=18):
-    """
-    Аугментирует изображение, применяя размытие и поворот.
+def augment_image(image, blur_kernel_size_range=(3, 7), angle_range=(-15, 15)):
+    # Генерация случайного угла поворота в заданном диапазоне
+    random_angle = random.uniform(angle_range[0], angle_range[1])
 
-    :param image: Входное изображение в формате np.array.
-    :param blur_kernel_size: Размер ядра для размытия (по умолчанию 5).
-    :param angle: Угол поворота изображения (по умолчанию 45 градусов).
-    :return: Аугментированное изображение в формате np.array.
-    """
-    # Применяем размытие
-    image = cv2.imread(image)
-    blurred_image = cv2.GaussianBlur(image, (blur_kernel_size, blur_kernel_size), 0)
+    # Поворот изображения
+    rotated_image = image.rotate(random_angle, expand=True)
 
-    # Получаем размеры изображения
-    (h, w) = blurred_image.shape[:2]
+    # Генерация случайного размера ядра размытия в заданном диапазоне
+    random_blur_kernel_size = random.randint(blur_kernel_size_range[0], blur_kernel_size_range[1])
 
-    # Вычисляем центр изображения
-    center = (w // 2, h // 2)
+    # Применение размытия
+    blurred_image = rotated_image.filter(ImageFilter.GaussianBlur(random_blur_kernel_size))
 
-    # Получаем матрицу поворота
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-
-    # Применяем поворот
-    rotated_image = cv2.warpAffine(blurred_image, M, (w, h))
-
-    return rotated_image
+    return blurred_image
