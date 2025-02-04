@@ -7,6 +7,7 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import os
 from ultralytics import YOLO
+from .utils import augment_image
 
 class FewShotLogoRecognizer:
     """
@@ -81,7 +82,7 @@ class FewShotLogoRecognizer:
         img = cv2.resize(image, (608, 608))
         return torch.from_numpy(img).permute(2, 0, 1).float().div(255.0).unsqueeze(0)
 
-    def detect_logos(self, image_path: str, target_brand: Optional[str] = None) -> List[dict]:
+    def detect_logos(self, image_path: str, target_brand: Optional[str] = None, augmet: bool = False) -> List[dict]:
         """
         Detects logos in an image and classifies them.
 
@@ -105,9 +106,9 @@ class FewShotLogoRecognizer:
                 detections = pred.boxes.xyxy.cpu().numpy()
         else:
             # Fallback to XML annotations
-            xml_path = os.path.join('data/processed/annotations/val',
+            xml_path = os.path.join('../data/processed/annotations/val',
                                 os.path.splitext(os.path.basename(image_path))[0] + ".xml")
-        detections = self._parse_xml_annotations(xml_path)
+            detections = self._parse_xml_annotations(xml_path)
 
         results = []
         for det in detections:
@@ -120,8 +121,11 @@ class FewShotLogoRecognizer:
             if crop.size == 0:
                 continue
 
+            
+            
             crop_pil = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-
+            if augmet:
+                crop_pil = augment_image(crop_pil)
             # Binary classification
             if target_brand:
                 confidence = self.is_target_brand(crop_pil, target_brand)
@@ -135,7 +139,7 @@ class FewShotLogoRecognizer:
                 'bbox': (x1, y1, x2, y2)
             })
 
-            print(results)
+            
 
         return results
 
@@ -160,8 +164,9 @@ class FewShotLogoRecognizer:
             query_emb /= query_emb.norm(dim=-1, keepdim=True)
 
         # Compute similarity with the target brand
-        target_sim = torch.cosine_similarity(query_emb, self.brand_prototypes[target_brand].unsqueeze(0)).item()
+        target_sim = torch.cosine_similarity(query_emb,self.brand_prototypes[target_brand].unsqueeze(0)).item()
 
+        # target_sim = torch.norm(query_emb - self.brand_prototypes[target_brand].unsqueeze(0)).item()
         # Normalize to probability using sigmoid
         probability = 1 / (1 + np.exp(-10 * (target_sim - threshold)))
 
