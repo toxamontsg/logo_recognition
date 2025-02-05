@@ -26,12 +26,12 @@ pip install -r requirements.txt
 
 3. Скачать веса YOLO:
 ```bash
-!wget -P models https://github.com/toxamontsg/yolo_models/raw/refs/heads/main/yolo5s_logo.pt
+wget -P models https://github.com/toxamontsg/yolo_models/raw/refs/heads/main/yolo5s_logo.pt
 ```
 
 4. Скачать dataset:
 ```bash
-!wget -P data/raw 123.57.42.89/Dataset_ict/LogoDet-3K.zip
+wget -P data/raw 123.57.42.89/Dataset_ict/LogoDet-3K.zip
 ```
 
 ## Использование
